@@ -4,6 +4,7 @@ import React from 'react';
 import { useRouter } from 'next/navigation';
 import { authService, User } from '../../lib/auth';
 import { Button } from '../ui/Button';
+import { SimpleNotificationCenter } from '../notifications/SimpleNotificationCenter';
 
 interface NavbarProps {
   user: User;
@@ -28,6 +29,8 @@ export const Navbar: React.FC<NavbarProps> = ({ user }) => {
           </div>
           
           <div className="flex items-center space-x-4">
+            <SimpleNotificationCenter />
+            
             <div className="flex items-center space-x-2">
               <div className="text-sm">
                 <p className="font-medium text-gray-900">{user.name}</p>
@@ -41,7 +44,7 @@ export const Navbar: React.FC<NavbarProps> = ({ user }) => {
             </div>
             
             <Button
-              variant="outline"
+              variant="outline-primary"
               size="sm"
               onClick={handleLogout}
             >

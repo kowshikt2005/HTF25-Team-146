@@ -1,4 +1,5 @@
 import { authService } from './auth';
+import { processTasksForCompatibility, addBackwardCompatibility } from './taskUtils';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -12,20 +13,28 @@ class ApiService {
   }
 
   async request(endpoint: string, options: RequestInit = {}) {
-    const response = await fetch(`${API_URL}${endpoint}`, {
-      ...options,
-      headers: {
-        ...this.getHeaders(),
-        ...options.headers
+    try {
+      const response = await fetch(`${API_URL}${endpoint}`, {
+        ...options,
+        headers: {
+          ...this.getHeaders(),
+          ...options.headers
+        }
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Request failed');
       }
-    });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Request failed');
+      return response.json();
+    } catch (error) {
+      // Handle network errors or JSON parsing errors
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        throw new Error('Unable to connect to server. Please make sure the backend is running on http://localhost:5000');
+      }
+      throw error;
     }
-
-    return response.json();
   }
 
   // Projects
@@ -47,7 +56,8 @@ class ApiService {
 
   // Tasks
   async getTasks(projectId: string) {
-    return this.request(`/api/tasks/${projectId}`);
+    const tasks = await this.request(`/api/tasks/${projectId}`);
+    return processTasksForCompatibility(tasks);
   }
 
   async createTask(taskData: {
@@ -58,20 +68,27 @@ class ApiService {
     priority: string;
     dueDate?: string;
   }) {
-    return this.request('/api/tasks', {
+    const task = await this.request('/api/tasks', {
       method: 'POST',
       body: JSON.stringify(taskData)
     });
+    return addBackwardCompatibility(task);
   }
 
   async updateTask(taskId: string, updates: {
     status?: string;
     description?: string;
   }) {
-    return this.request(`/api/tasks/${taskId}`, {
+    const task = await this.request(`/api/tasks/${taskId}`, {
       method: 'PUT',
       body: JSON.stringify(updates)
     });
+    return addBackwardCompatibility(task);
+  }
+
+  // Users
+  async getUsers() {
+    return this.request('/api/users');
   }
 }
 

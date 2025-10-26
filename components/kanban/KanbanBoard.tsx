@@ -1,8 +1,22 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import {
+  DndContext,
+  DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCorners,
+} from '@dnd-kit/core';
 import { KanbanColumn } from './KanbanColumn';
+import { TaskCard } from './TaskCard';
 import { apiService } from '../../lib/api';
+import { useAppStore } from '../../lib/store';
+import { useOptimisticUpdates } from '../../hooks/useOptimisticUpdates';
+import { useSocket } from '../../hooks/useSocket';
 
 interface Task {
   _id: string;
@@ -25,17 +39,34 @@ interface Task {
 interface KanbanBoardProps {
   projectId: string;
   onTaskClick: (task: Task) => void;
+  onAddTask?: () => void;
 }
 
-export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, onTaskClick }) => {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
+export const KanbanBoard: React.FC<KanbanBoardProps> = ({ 
+  projectId, 
+  onTaskClick, 
+  onAddTask 
+}) => {
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const { user, tasks, setTasks, isLoading, setLoading } = useAppStore();
+  const { optimisticTaskUpdate } = useOptimisticUpdates();
+  const { emitEvent } = useSocket();
+  const canAddTasks = user?.role === 'mentor';
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
 
   useEffect(() => {
     loadTasks();
   }, [projectId]);
 
   const loadTasks = async () => {
+    setLoading(true);
     try {
       const tasksData = await apiService.getTasks(projectId);
       setTasks(tasksData);
@@ -46,56 +77,88 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ projectId, onTaskClick
     }
   };
 
-  const handleTaskDrop = async (taskId: string, newStatus: string) => {
-    try {
-      await apiService.updateTask(taskId, { status: newStatus });
-      
-      // Update local state
-      setTasks(prevTasks =>
-        prevTasks.map(task =>
-          task._id === taskId ? { ...task, status: newStatus as any } : task
-        )
-      );
-    } catch (error) {
-      console.error('Failed to update task status:', error);
-    }
+  const handleDragStart = (event: DragStartEvent) => {
+    const { active } = event;
+    const task = tasks.find(t => t._id === active.id);
+    setActiveTask(task || null);
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveTask(null);
+
+    if (!over) return;
+
+    const taskId = active.id as string;
+    const newStatus = over.id as string;
+    
+    // Find the task being moved
+    const task = tasks.find(t => t._id === taskId);
+    if (!task || task.status === newStatus) return;
+
+    // Use optimistic update
+    await optimisticTaskUpdate(taskId, { status: newStatus }, task);
+    
+    // Emit real-time event
+    emitEvent('task_updated', { ...task, status: newStatus });
   };
 
   const todoTasks = tasks.filter(task => task.status === 'todo');
   const inProgressTasks = tasks.filter(task => task.status === 'in-progress');
   const doneTasks = tasks.filter(task => task.status === 'done');
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-400"></div>
       </div>
     );
   }
 
   return (
-    <div className="flex space-x-6 overflow-x-auto pb-4">
-      <KanbanColumn
-        title="To Do"
-        status="todo"
-        tasks={todoTasks}
-        onTaskClick={onTaskClick}
-        onDrop={handleTaskDrop}
-      />
-      <KanbanColumn
-        title="In Progress"
-        status="in-progress"
-        tasks={inProgressTasks}
-        onTaskClick={onTaskClick}
-        onDrop={handleTaskDrop}
-      />
-      <KanbanColumn
-        title="Done"
-        status="done"
-        tasks={doneTasks}
-        onTaskClick={onTaskClick}
-        onDrop={handleTaskDrop}
-      />
-    </div>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCorners}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
+      <div className="flex h-full bg-white rounded border border-gray-200 overflow-hidden">
+        <KanbanColumn
+          id="todo"
+          title="Backlog"
+          tasks={todoTasks}
+          onTaskClick={onTaskClick}
+          onAddTask={onAddTask}
+          canAddTasks={canAddTasks}
+        />
+        <div className="w-px bg-gray-200" />
+        <KanbanColumn
+          id="in-progress"
+          title="In progress"
+          tasks={inProgressTasks}
+          onTaskClick={onTaskClick}
+        />
+        <div className="w-px bg-gray-200" />
+        <KanbanColumn
+          id="done"
+          title="Done"
+          tasks={doneTasks}
+          onTaskClick={onTaskClick}
+        />
+      </div>
+
+      {/* Drag Overlay */}
+      <DragOverlay>
+        {activeTask ? (
+          <div className="rotate-3 opacity-90">
+            <TaskCard
+              task={activeTask}
+              onClick={() => {}}
+              isDragging={true}
+            />
+          </div>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   );
 };

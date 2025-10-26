@@ -1,5 +1,8 @@
 import React from 'react';
-import { TaskCard } from './TaskCard';
+import { useDroppable } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { Plus } from 'lucide-react';
+import { DraggableTaskCard } from './DraggableTaskCard';
 
 interface Task {
   _id: string;
@@ -20,70 +23,104 @@ interface Task {
 }
 
 interface KanbanColumnProps {
+  id: string;
   title: string;
-  status: 'todo' | 'in-progress' | 'done';
   tasks: Task[];
   onTaskClick: (task: Task) => void;
-  onDrop: (taskId: string, newStatus: string) => void;
+  onAddTask?: () => void;
+  canAddTasks?: boolean;
 }
 
-const statusColors = {
-  'todo': 'bg-gray-100',
-  'in-progress': 'bg-blue-100',
-  'done': 'bg-green-100'
+const statusConfig = {
+  'todo': {
+    color: 'text-gray-600',
+    bgColor: 'bg-gray-50/50',
+    count: 'bg-gray-100 text-gray-600'
+  },
+  'in-progress': {
+    color: 'text-blue-600',
+    bgColor: 'bg-blue-50/30',
+    count: 'bg-blue-100 text-blue-600'
+  },
+  'done': {
+    color: 'text-green-600',
+    bgColor: 'bg-green-50/30',
+    count: 'bg-green-100 text-green-600'
+  }
 };
 
 export const KanbanColumn: React.FC<KanbanColumnProps> = ({
+  id,
   title,
-  status,
   tasks,
   onTaskClick,
-  onDrop
+  onAddTask,
+  canAddTasks = false
 }) => {
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
+  const { setNodeRef, isOver } = useDroppable({
+    id: id,
+  });
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    const taskId = e.dataTransfer.getData('text/plain');
-    onDrop(taskId, status);
-  };
+  const config = statusConfig[id as keyof typeof statusConfig] || statusConfig.todo;
+  const taskIds = tasks.map(task => task._id);
 
   return (
-    <div className="flex-1 min-w-80">
-      <div className={`rounded-lg p-4 ${statusColors[status]}`}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-gray-900">{title}</h3>
-          <span className="bg-white px-2 py-1 rounded-full text-sm font-medium text-gray-600">
+    <div className="flex flex-col h-full min-w-80 max-w-80">
+      {/* Column Header */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200/60">
+        <div className="flex items-center gap-2">
+          <h3 className={`font-medium text-sm ${config.color}`}>
+            {title}
+          </h3>
+          <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${config.count}`}>
             {tasks.length}
           </span>
         </div>
         
-        <div
-          className="min-h-96 space-y-2"
-          onDragOver={handleDragOver}
-          onDrop={handleDrop}
-        >
-          {tasks.map((task) => (
-            <div
-              key={task._id}
-              draggable
-              onDragStart={(e) => e.dataTransfer.setData('text/plain', task._id)}
-            >
-              <TaskCard
+        {canAddTasks && onAddTask && (
+          <button
+            onClick={onAddTask}
+            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
+      {/* Column Content */}
+      <div
+        ref={setNodeRef}
+        className={`flex-1 px-3 py-2 ${config.bgColor} min-h-96 transition-colors ${
+          isOver ? 'bg-blue-50' : ''
+        }`}
+      >
+        <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
+          <div className="space-y-0">
+            {tasks.map((task) => (
+              <DraggableTaskCard
+                key={task._id}
                 task={task}
                 onClick={() => onTaskClick(task)}
               />
-            </div>
-          ))}
-          
-          {tasks.length === 0 && (
-            <div className="text-center py-8 text-gray-500">
-              <p className="text-sm">No tasks</p>
-            </div>
-          )}
-        </div>
+            ))}
+            
+            {/* Add New Task Button */}
+            {canAddTasks && onAddTask && (
+              <button
+                onClick={onAddTask}
+                className="w-full p-2 mt-2 text-left text-sm text-gray-500 hover:text-gray-700 hover:bg-white/50 rounded border-2 border-dashed border-gray-200 hover:border-gray-300 transition-colors"
+              >
+                + New work item
+              </button>
+            )}
+            
+            {tasks.length === 0 && (!canAddTasks || !onAddTask) && (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <p className="text-sm text-gray-400">No tasks</p>
+              </div>
+            )}
+          </div>
+        </SortableContext>
       </div>
     </div>
   );

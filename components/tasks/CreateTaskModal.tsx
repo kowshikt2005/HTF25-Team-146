@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
@@ -23,10 +23,27 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
     title: '',
     description: '',
     priority: 'medium',
-    dueDate: ''
+    dueDate: '',
+    assignedTo: ''
   });
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (isOpen) {
+      loadUsers();
+    }
+  }, [isOpen]);
+
+  const loadUsers = async () => {
+    try {
+      const usersData = await apiService.getUsers();
+      setUsers(usersData);
+    } catch (error) {
+      console.error('Failed to load users:', error);
+    }
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setFormData({
@@ -47,7 +64,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
       });
       onTaskCreated();
       onClose();
-      setFormData({ title: '', description: '', priority: 'medium', dueDate: '' });
+      setFormData({ title: '', description: '', priority: 'medium', dueDate: '', assignedTo: '' });
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -60,6 +77,14 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
     { value: 'medium', label: 'Medium' },
     { value: 'high', label: 'High' },
     { value: 'critical', label: 'Critical' }
+  ];
+
+  const userOptions = [
+    { value: '', label: 'Unassigned' },
+    ...users.map((user: any) => ({
+      value: user._id,
+      label: user.name
+    }))
   ];
 
   if (!isOpen) return null;
@@ -102,6 +127,14 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
               placeholder="Enter task description"
             />
           </div>
+
+          <Select
+            label="Assign to"
+            name="assignedTo"
+            value={formData.assignedTo}
+            onChange={handleChange}
+            options={userOptions}
+          />
 
           <Select
             label="Priority"

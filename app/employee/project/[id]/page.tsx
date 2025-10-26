@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { authService } from '../../../../lib/auth';
 import { Navbar } from '../../../../components/layout/Navbar';
 import { KanbanBoard } from '../../../../components/kanban/KanbanBoard';
+import { TaskDetailModal } from '../../../../components/tasks/TaskDetailModal';
 
 export default function EmployeeProjectPage() {
   const [user, setUser] = useState(authService.getUser());
@@ -22,7 +23,6 @@ export default function EmployeeProjectPage() {
 
   const handleTaskClick = (task: any) => {
     setSelectedTask(task);
-    // TODO: Open task detail modal
   };
 
   if (!user) {
@@ -56,6 +56,13 @@ export default function EmployeeProjectPage() {
           />
         </div>
       </div>
+
+      <TaskDetailModal
+        isOpen={!!selectedTask}
+        onClose={() => setSelectedTask(null)}
+        task={selectedTask}
+        canEdit={false}
+      />
     </div>
   );
 }

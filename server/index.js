@@ -45,16 +45,58 @@ const projectSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-// Task Schema
+// Enhanced Task Schema
 const taskSchema = new mongoose.Schema({
   title: { type: String, required: true },
-  description: String,
+  description: { type: String, default: '' }, // Rich text support later
   project: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', required: true },
-  assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  
+  // Multiple assignees support
+  assignees: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  status: { type: String, enum: ['todo', 'in-progress', 'done'], default: 'todo' },
-  priority: { type: String, enum: ['low', 'medium', 'high', 'critical'], default: 'medium' },
+  
+  // Enhanced status and priority
+  status: { 
+    type: String, 
+    enum: ['todo', 'in-progress', 'review', 'done'], 
+    default: 'todo' 
+  },
+  priority: { 
+    type: String, 
+    enum: ['low', 'medium', 'high', 'critical'], 
+    default: 'medium' 
+  },
+  
+  // Time tracking
   dueDate: Date,
+  estimatedHours: { type: Number, default: 0 },
+  actualHours: { type: Number, default: 0 },
+  
+  // Labels and categorization
+  tags: [{ type: String }],
+  labels: [{
+    name: String,
+    color: String
+  }],
+  
+  // Subtasks and dependencies
+  subtasks: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Task' }],
+  parentTask: { type: mongoose.Schema.Types.ObjectId, ref: 'Task' },
+  dependencies: {
+    blockedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Task' }],
+    blocking: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Task' }]
+  },
+  
+  // Additional metadata
+  attachments: [{
+    filename: String,
+    url: String,
+    size: Number,
+    uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    uploadedAt: { type: Date, default: Date.now }
+  }],
+  
+  // Timestamps
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
@@ -190,6 +232,20 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
   }
 });
 
+// Get users for task assignment
+app.get('/api/users', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'mentor') {
+      return res.status(403).json({ error: 'Only mentors can view users' });
+    }
+    
+    const users = await User.find({ role: 'employee' }, 'name email');
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Task Routes
 app.post('/api/tasks', authenticateToken, async (req, res) => {
   try {
@@ -199,14 +255,14 @@ app.post('/api/tasks', authenticateToken, async (req, res) => {
       title,
       description,
       project,
-      assignedTo,
+      assignees: assignedTo ? [assignedTo] : [], // Convert single assignedTo to assignees array
       priority,
       dueDate,
       createdBy: req.user.userId
     });
 
     await task.save();
-    await task.populate('assignedTo createdBy project', 'name email title');
+    await task.populate('assignees createdBy project', 'name email title');
     
     io.emit('task_created', task);
     res.status(201).json(task);
@@ -218,7 +274,7 @@ app.post('/api/tasks', authenticateToken, async (req, res) => {
 app.get('/api/tasks/:projectId', authenticateToken, async (req, res) => {
   try {
     const tasks = await Task.find({ project: req.params.projectId })
-      .populate('assignedTo createdBy', 'name email')
+      .populate('assignees createdBy', 'name email')
       .sort({ createdAt: -1 });
     
     res.json(tasks);
@@ -235,7 +291,7 @@ app.put('/api/tasks/:taskId', authenticateToken, async (req, res) => {
       req.params.taskId,
       { status, description, updatedAt: new Date() },
       { new: true }
-    ).populate('assignedTo createdBy project', 'name email title');
+    ).populate('assignees createdBy project', 'name email title');
 
     io.emit('task_updated', task);
     res.json(task);

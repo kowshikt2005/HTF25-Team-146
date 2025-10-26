@@ -1,4 +1,5 @@
 import React from 'react';
+import { MoreHorizontal } from 'lucide-react';
 
 interface Task {
   _id: string;
@@ -21,56 +22,105 @@ interface Task {
 interface TaskCardProps {
   task: Task;
   onClick: () => void;
+  onPeek?: () => void;
+  isDragging?: boolean;
 }
 
 const priorityColors = {
-  low: 'bg-green-100 text-green-800',
-  medium: 'bg-yellow-100 text-yellow-800',
-  high: 'bg-orange-100 text-orange-800',
-  critical: 'bg-red-100 text-red-800'
+  low: 'text-green-600',
+  medium: 'text-yellow-600', 
+  high: 'text-orange-600',
+  critical: 'text-red-600'
 };
 
-export const TaskCard: React.FC<TaskCardProps> = ({ task, onClick }) => {
+const statusColors = {
+  'todo': 'text-gray-500',
+  'in-progress': 'text-blue-600',
+  'done': 'text-green-600'
+};
+
+export const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onPeek, isDragging = false }) => {
+  const taskId = `${task._id.slice(-4).toUpperCase()}`;
+  
   return (
     <div
       onClick={onClick}
-      className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow cursor-pointer mb-3"
+      className={`group/kanban-block relative mb-2 block rounded border border-gray-200 bg-white p-3 text-sm transition-all hover:border-gray-300 hover:shadow-sm cursor-pointer ${
+        isDragging ? 'shadow-lg border-blue-300 bg-blue-50' : ''
+      }`}
     >
-      <div className="flex justify-between items-start mb-2">
-        <h4 className="font-medium text-gray-900 text-sm line-clamp-2">
+      {/* Header with ID and Actions */}
+      <div className="relative mb-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-gray-400 font-medium">{taskId}</span>
+          <div className="opacity-0 group-hover/kanban-block:opacity-100 transition-opacity">
+            <button 
+              className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Task Title */}
+      <div className="mb-2">
+        <h4 className="font-medium text-gray-900 text-sm line-clamp-2 leading-5">
           {task.title}
         </h4>
-        <span className={`px-2 py-1 rounded-full text-xs font-medium ${priorityColors[task.priority]}`}>
-          {task.priority}
-        </span>
       </div>
-      
+
+      {/* Task Description */}
       {task.description && (
-        <p className="text-gray-600 text-xs mb-3 line-clamp-2">
+        <p className="text-gray-500 text-xs mb-3 line-clamp-2 leading-4">
           {task.description}
         </p>
       )}
-      
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          {task.assignedTo && (
-            <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center">
+
+      {/* Properties Row */}
+      <div className="flex items-center justify-between text-xs">
+        <div className="flex items-center gap-2">
+          {/* Status */}
+          <div className="flex items-center gap-1">
+            <div className={`w-2 h-2 rounded-full ${
+              task.status === 'todo' ? 'bg-gray-400' :
+              task.status === 'in-progress' ? 'bg-blue-500' : 'bg-green-500'
+            }`} />
+            <span className={`capitalize ${statusColors[task.status]}`}>
+              {task.status === 'in-progress' ? 'In Progress' : task.status === 'todo' ? 'Backlog' : 'Done'}
+            </span>
+          </div>
+
+          {/* Priority */}
+          <div className="flex items-center gap-1">
+            <span className={`capitalize ${priorityColors[task.priority]}`}>
+              {task.priority}
+            </span>
+          </div>
+        </div>
+
+        {/* Assignee */}
+        {task.assignedTo && (
+          <div className="flex items-center gap-1">
+            <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
               <span className="text-white text-xs font-medium">
                 {task.assignedTo.name.charAt(0).toUpperCase()}
               </span>
             </div>
-          )}
-          <span className="text-xs text-gray-500">
-            {task.assignedTo ? task.assignedTo.name : 'Unassigned'}
-          </span>
-        </div>
-        
-        {task.dueDate && (
-          <span className="text-xs text-gray-500">
-            {new Date(task.dueDate).toLocaleDateString()}
-          </span>
+          </div>
         )}
       </div>
+
+      {/* Due Date */}
+      {task.dueDate && (
+        <div className="mt-2 text-xs text-gray-400">
+          {new Date(task.dueDate).toLocaleDateString('en-US', { 
+            month: 'short', 
+            day: 'numeric' 
+          })}
+        </div>
+      )}
     </div>
   );
 };

@@ -6,12 +6,25 @@ import { authService } from '../../../../lib/auth';
 import { Navbar } from '../../../../components/layout/Navbar';
 import { KanbanBoard } from '../../../../components/kanban/KanbanBoard';
 import { CreateTaskModal } from '../../../../components/tasks/CreateTaskModal';
+import { TaskDetailModal } from '../../../../components/tasks/TaskDetailModal';
+import { TaskPeekOverview } from '../../../../components/tasks/TaskPeekOverview';
+import { TaskFilters } from '../../../../components/views/TaskFilters';
+import { ProjectAnalytics } from '../../../../components/analytics/ProjectAnalytics';
+import { ProjectHeader } from '../../../../components/layout/ProjectHeader';
+import { Breadcrumb } from '../../../../components/ui/Breadcrumb';
 import { Button } from '../../../../components/ui/Button';
+import { ClientOnly } from '../../../../components/ui/ClientOnly';
+
+type ViewType = 'kanban' | 'list' | 'calendar' | 'timeline';
 
 export default function MentorProjectPage() {
   const [user, setUser] = useState(authService.getUser());
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
+  const [peekTask, setPeekTask] = useState(null);
+  const [filters, setFilters] = useState({});
+  const [tasks, setTasks] = useState([]);
+  const [currentView, setCurrentView] = useState<ViewType>('kanban');
   const router = useRouter();
   const params = useParams();
   const projectId = params.id as string;
@@ -25,7 +38,6 @@ export default function MentorProjectPage() {
 
   const handleTaskClick = (task: any) => {
     setSelectedTask(task);
-    // TODO: Open task detail modal
   };
 
   const handleTaskCreated = () => {
@@ -34,40 +46,36 @@ export default function MentorProjectPage() {
   };
 
   if (!user) {
-    return <div>Loading...</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading project...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar user={user} />
       
-      <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0">
-          <div className="flex justify-between items-center mb-6">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => router.back()}
-                className="text-gray-600 hover:text-gray-900"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Project Tasks</h1>
-                <p className="text-gray-600">Manage tasks and track progress</p>
-              </div>
-            </div>
-            <Button onClick={() => setShowCreateTaskModal(true)}>
-              Create New Task
-            </Button>
-          </div>
+      <ProjectHeader
+        title="Work items"
+        onBack={() => router.push('/mentor/dashboard')}
+        onCreateTask={() => setShowCreateTaskModal(true)}
+        onToggleFilters={() => {}}
+        currentView={currentView}
+        onViewChange={setCurrentView}
+      />
 
-          <KanbanBoard
-            projectId={projectId}
-            onTaskClick={handleTaskClick}
-          />
-        </div>
+      {/* Full Width Kanban Board */}
+      <div className="h-[calc(100vh-120px)]">
+        <KanbanBoard
+          projectId={projectId}
+          onTaskClick={handleTaskClick}
+          onAddTask={() => setShowCreateTaskModal(true)}
+        />
       </div>
 
       <CreateTaskModal
@@ -75,6 +83,24 @@ export default function MentorProjectPage() {
         onClose={() => setShowCreateTaskModal(false)}
         onTaskCreated={handleTaskCreated}
         projectId={projectId}
+      />
+
+      <TaskDetailModal
+        isOpen={!!selectedTask}
+        onClose={() => setSelectedTask(null)}
+        task={selectedTask}
+        canEdit={true}
+      />
+
+      <TaskPeekOverview
+        isOpen={!!peekTask}
+        onClose={() => setPeekTask(null)}
+        onOpenFull={() => {
+          setSelectedTask(peekTask);
+          setPeekTask(null);
+        }}
+        task={peekTask}
+        canEdit={true}
       />
     </div>
   );

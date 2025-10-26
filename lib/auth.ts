@@ -54,25 +54,33 @@ export const authService = {
   },
 
   setToken(token: string) {
-    localStorage.setItem('token', token);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('token', token);
+    }
   },
 
   getToken(): string | null {
+    if (typeof window === 'undefined') return null; // Server-side check
     return localStorage.getItem('token');
   },
 
   setUser(user: User) {
-    localStorage.setItem('user', JSON.stringify(user));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('user', JSON.stringify(user));
+    }
   },
 
   getUser(): User | null {
+    if (typeof window === 'undefined') return null; // Server-side check
     const user = localStorage.getItem('user');
     return user ? JSON.parse(user) : null;
   },
 
   logout() {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+    }
   },
 
   isAuthenticated(): boolean {
