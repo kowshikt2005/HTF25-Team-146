@@ -90,6 +90,14 @@ class ApiService {
   async getUsers() {
     return this.request('/api/users');
   }
+
+  async getAllUsers() {
+    return this.request('/api/users/all');
+  }
+
+  async getAssignedTasks(userId: string) {
+    return this.request(`/api/users/${userId}/assigned-tasks`);
+  }
 }
 
 export const apiService = new ApiService();

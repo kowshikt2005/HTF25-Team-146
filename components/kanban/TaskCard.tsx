@@ -5,7 +5,7 @@ interface Task {
   _id: string;
   title: string;
   description: string;
-  status: 'todo' | 'in-progress' | 'done';
+  status: 'todo' | 'in-progress' | 'review' | 'done';
   priority: 'low' | 'medium' | 'high' | 'critical';
   assignedTo?: {
     name: string;
@@ -36,6 +36,7 @@ const priorityColors = {
 const statusColors = {
   'todo': 'text-gray-500',
   'in-progress': 'text-blue-600',
+  'review': 'text-purple-600',
   'done': 'text-green-600'
 };
 
@@ -85,10 +86,13 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onPeek, isDra
           <div className="flex items-center gap-1">
             <div className={`w-2 h-2 rounded-full ${
               task.status === 'todo' ? 'bg-gray-400' :
-              task.status === 'in-progress' ? 'bg-blue-500' : 'bg-green-500'
+              task.status === 'in-progress' ? 'bg-blue-500' :
+              task.status === 'review' ? 'bg-purple-500' : 'bg-green-500'
             }`} />
             <span className={`capitalize ${statusColors[task.status]}`}>
-              {task.status === 'in-progress' ? 'In Progress' : task.status === 'todo' ? 'Backlog' : 'Done'}
+              {task.status === 'in-progress' ? 'In Progress' : 
+               task.status === 'todo' ? 'Backlog' : 
+               task.status === 'review' ? 'Review' : 'Done'}
             </span>
           </div>
 

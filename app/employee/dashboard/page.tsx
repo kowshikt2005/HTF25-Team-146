@@ -8,6 +8,7 @@ import { Navbar } from '../../../components/layout/Navbar';
 import { ProjectCard } from '../../../components/projects/ProjectCard';
 import { StatsCard } from '../../../components/dashboard/StatsCard';
 import { ActivityFeed } from '../../../components/dashboard/ActivityFeed';
+import { TaskNotifications } from '../../../components/dashboard/TaskNotifications';
 import { CheckSquare, Clock, AlertCircle, TrendingUp } from 'lucide-react';
 
 export default function EmployeeDashboard() {
@@ -101,27 +102,32 @@ export default function EmployeeDashboard() {
               <p className="text-gray-600">Wait for your mentor to assign you to projects</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-              {/* Projects Section */}
-              <div className="xl:col-span-2">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-lg font-semibold text-gray-900">Assigned Projects</h2>
-                  <span className="text-sm text-gray-500">{projects.length} projects</span>
+            <div className="space-y-8">
+              {/* Task Notifications */}
+              <TaskNotifications userId={user.id} />
+              
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                {/* Projects Section */}
+                <div className="xl:col-span-2">
+                  <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-lg font-semibold text-gray-900">Assigned Projects</h2>
+                    <span className="text-sm text-gray-500">{projects.length} projects</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {projects.map((project: any) => (
+                      <ProjectCard
+                        key={project._id}
+                        project={project}
+                        onClick={() => handleProjectClick(project._id)}
+                      />
+                    ))}
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {projects.map((project: any) => (
-                    <ProjectCard
-                      key={project._id}
-                      project={project}
-                      onClick={() => handleProjectClick(project._id)}
-                    />
-                  ))}
-                </div>
-              </div>
 
-              {/* Activity Feed */}
-              <div className="xl:col-span-1">
-                <ActivityFeed />
+                {/* Activity Feed */}
+                <div className="xl:col-span-1">
+                  <ActivityFeed />
+                </div>
               </div>
             </div>
           )}

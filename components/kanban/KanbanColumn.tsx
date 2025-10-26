@@ -8,7 +8,7 @@ interface Task {
   _id: string;
   title: string;
   description: string;
-  status: 'todo' | 'in-progress' | 'done';
+  status: 'todo' | 'in-progress' | 'review' | 'done';
   priority: 'low' | 'medium' | 'high' | 'critical';
   assignedTo?: {
     name: string;
@@ -42,6 +42,11 @@ const statusConfig = {
     bgColor: 'bg-blue-50/30',
     count: 'bg-blue-100 text-blue-600'
   },
+  'review': {
+    color: 'text-purple-600',
+    bgColor: 'bg-purple-50/30',
+    count: 'bg-purple-100 text-purple-600'
+  },
   'done': {
     color: 'text-green-600',
     bgColor: 'bg-green-50/30',
@@ -65,14 +70,14 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
   const taskIds = tasks.map(task => task._id);
 
   return (
-    <div className="flex flex-col h-full min-w-80 max-w-80">
+    <div className="flex flex-col h-full min-w-80 flex-1 bg-white rounded-lg border border-gray-200 shadow-sm">
       {/* Column Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200/60">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
         <div className="flex items-center gap-2">
-          <h3 className={`font-medium text-sm ${config.color}`}>
+          <h3 className={`font-semibold text-sm ${config.color}`}>
             {title}
           </h3>
-          <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${config.count}`}>
+          <span className={`px-2 py-1 rounded-full text-xs font-medium ${config.count}`}>
             {tasks.length}
           </span>
         </div>
@@ -80,7 +85,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
         {canAddTasks && onAddTask && (
           <button
             onClick={onAddTask}
-            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+            className="p-1.5 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
           >
             <Plus className="h-4 w-4" />
           </button>
@@ -90,12 +95,13 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
       {/* Column Content */}
       <div
         ref={setNodeRef}
-        className={`flex-1 px-3 py-2 ${config.bgColor} min-h-96 transition-colors ${
-          isOver ? 'bg-blue-50' : ''
+        className={`flex-1 px-3 py-3 overflow-y-auto transition-colors ${
+          isOver ? 'bg-blue-50/50' : ''
         }`}
+        style={{ maxHeight: 'calc(100vh - 200px)' }}
       >
         <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
-          <div className="space-y-0">
+          <div className="space-y-2">
             {tasks.map((task) => (
               <DraggableTaskCard
                 key={task._id}
@@ -108,15 +114,21 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
             {canAddTasks && onAddTask && (
               <button
                 onClick={onAddTask}
-                className="w-full p-2 mt-2 text-left text-sm text-gray-500 hover:text-gray-700 hover:bg-white/50 rounded border-2 border-dashed border-gray-200 hover:border-gray-300 transition-colors"
+                className="w-full p-3 mt-2 text-left text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg border-2 border-dashed border-gray-200 hover:border-gray-300 transition-all duration-200"
               >
-                + New work item
+                <div className="flex items-center justify-center space-x-2">
+                  <Plus className="h-4 w-4" />
+                  <span>Add work item</span>
+                </div>
               </button>
             )}
             
             {tasks.length === 0 && (!canAddTasks || !onAddTask) && (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <p className="text-sm text-gray-400">No tasks</p>
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-3">
+                  <div className="w-6 h-6 bg-gray-300 rounded"></div>
+                </div>
+                <p className="text-sm text-gray-400">No work items</p>
               </div>
             )}
           </div>

@@ -1,256 +1,432 @@
 'use client';
 
-import React, { useState } from 'react';
-import { X, Calendar, User, Flag, MessageSquare, Clock } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Calendar, User, Flag, Clock, Edit3, Save, Users } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
+import { apiService } from '../../lib/api';
+import { useAppStore } from '../../lib/store';
+import { useSocket } from '../../hooks/useSocket';
 
 interface Task {
   _id: string;
   title: string;
   description: string;
-  status: 'todo' | 'in-progress' | 'done';
+  status: 'todo' | 'in-progress' | 'review' | 'done';
   priority: 'low' | 'medium' | 'high' | 'critical';
   assignedTo?: {
+    _id: string;
     name: string;
     email: string;
   };
+  assignees?: Array<{
+    _id: string;
+    name: string;
+    email: string;
+  }>;
   createdBy: {
+    _id: string;
     name: string;
     email: string;
   };
   createdAt: string;
   dueDate?: string;
+  estimatedHours?: number;
+  actualHours?: number;
+  project: {
+    _id: string;
+    title: string;
+  };
 }
 
 interface TaskDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   task: Task | null;
-  onUpdateTask?: (taskId: string, updates: any) => void;
-  canEdit?: boolean;
+  canEdit: boolean;
 }
-
-const priorityConfig = {
-  low: { color: 'text-green-700', bg: 'bg-green-50', border: 'border-green-200', dot: 'bg-green-500' },
-  medium: { color: 'text-yellow-700', bg: 'bg-yellow-50', border: 'border-yellow-200', dot: 'bg-yellow-500' },
-  high: { color: 'text-orange-700', bg: 'bg-orange-50', border: 'border-orange-200', dot: 'bg-orange-500' },
-  critical: { color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-200', dot: 'bg-red-500' }
-};
-
-const statusConfig = {
-  'todo': { label: 'To Do', color: 'text-gray-700', bg: 'bg-gray-50' },
-  'in-progress': { label: 'In Progress', color: 'text-blue-700', bg: 'bg-blue-50' },
-  'done': { label: 'Done', color: 'text-green-700', bg: 'bg-green-50' }
-};
 
 export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   isOpen,
   onClose,
   task,
-  onUpdateTask,
-  canEdit = false
+  canEdit
 }) => {
-  const [workDescription, setWorkDescription] = useState('');
-  const [isAddingWork, setIsAddingWork] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [users, setUsers] = useState<any[]>([]);
+  const [formData, setFormData] = useState({
+    title: '',
+    description: '',
+    status: 'todo' as Task['status'],
+    priority: 'medium' as Task['priority'],
+    assignedTo: '',
+    dueDate: '',
+    estimatedHours: 0,
+    actualHours: 0
+  });
 
-  if (!isOpen || !task) return null;
+  const { user, updateTask } = useAppStore();
+  const { emitEvent } = useSocket();
 
-  const taskId = `TASK-${task._id.slice(-4).toUpperCase()}`;
-  const priority = priorityConfig[task.priority];
-  const status = statusConfig[task.status];
-
-  const handleAddWorkDescription = () => {
-    if (workDescription.trim() && onUpdateTask) {
-      // This would typically add to a work log array
-      onUpdateTask(task._id, { 
-        workDescription: workDescription.trim(),
-        lastUpdated: new Date().toISOString()
+  useEffect(() => {
+    if (task) {
+      setFormData({
+        title: task.title,
+        description: task.description,
+        status: task.status,
+        priority: task.priority,
+        assignedTo: task.assignedTo?._id || task.assignees?.[0]?._id || '',
+        dueDate: task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '',
+        estimatedHours: task.estimatedHours || 0,
+        actualHours: task.actualHours || 0
       });
-      setWorkDescription('');
-      setIsAddingWork(false);
+    }
+  }, [task]);
+
+  useEffect(() => {
+    if (isOpen && canEdit) {
+      loadUsers();
+    }
+  }, [isOpen, canEdit]);
+
+  const loadUsers = async () => {
+    try {
+      const usersData = await apiService.getAllUsers();
+      setUsers(usersData);
+    } catch (error) {
+      console.error('Failed to load users:', error);
     }
   };
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: name === 'estimatedHours' || name === 'actualHours' ? Number(value) : value
+    }));
+  };
+
+  const handleSave = async () => {
+    if (!task) return;
+
+    setLoading(true);
+    try {
+      const updates = {
+        title: formData.title,
+        description: formData.description,
+        status: formData.status,
+        priority: formData.priority,
+        assignedTo: formData.assignedTo,
+        dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : undefined,
+        estimatedHours: formData.estimatedHours,
+        actualHours: formData.actualHours
+      };
+
+      const updatedTask = await apiService.updateTask(task._id, updates);
+      updateTask(task._id, updatedTask);
+
+      // Check if task was reassigned
+      const wasReassigned = task.assignedTo?._id !== formData.assignedTo && formData.assignedTo;
+      
+      // Emit real-time event
+      emitEvent('task_updated', {
+        ...updatedTask,
+        wasReassigned,
+        previousAssignee: task.assignedTo,
+        updatedBy: user?.name
+      });
+
+      setIsEditing(false);
+    } catch (error) {
+      console.error('Failed to update task:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const priorityColors = {
+    low: 'text-green-600 bg-green-50 border-green-200',
+    medium: 'text-yellow-600 bg-yellow-50 border-yellow-200',
+    high: 'text-orange-600 bg-orange-50 border-orange-200',
+    critical: 'text-red-600 bg-red-50 border-red-200'
+  };
+
+  const statusColors = {
+    'todo': 'text-gray-600 bg-gray-50 border-gray-200',
+    'in-progress': 'text-blue-600 bg-blue-50 border-blue-200',
+    'review': 'text-purple-600 bg-purple-50 border-purple-200',
+    'done': 'text-green-600 bg-green-50 border-green-200'
+  };
+
+  const statusOptions = [
+    { value: 'todo', label: 'Backlog' },
+    { value: 'in-progress', label: 'In Progress' },
+    { value: 'review', label: 'Review' },
+    { value: 'done', label: 'Done' }
+  ];
+
+  const priorityOptions = [
+    { value: 'low', label: 'Low' },
+    { value: 'medium', label: 'Medium' },
+    { value: 'high', label: 'High' },
+    { value: 'critical', label: 'Critical' }
+  ];
+
+  const userOptions = [
+    { value: '', label: 'Unassigned' },
+    ...users.map(u => ({ value: u._id, label: u.name }))
+  ];
+
+  if (!isOpen || !task) return null;
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-gray-500">{taskId}</span>
-            <div className={`px-2 py-1 rounded-full text-xs font-medium ${priority.bg} ${priority.color} ${priority.border} border`}>
-              <div className="flex items-center gap-1">
-                <div className={`w-2 h-2 rounded-full ${priority.dot}`} />
-                {task.priority}
-              </div>
+          <div className="flex items-center space-x-3">
+            <div className="text-sm text-gray-500 font-medium">
+              #{task._id.slice(-6).toUpperCase()}
             </div>
-            <div className={`px-2 py-1 rounded-full text-xs font-medium ${status.bg} ${status.color}`}>
-              {status.label}
-            </div>
+            {canEdit && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsEditing(!isEditing)}
+                className="flex items-center space-x-1"
+              >
+                <Edit3 className="h-4 w-4" />
+                <span>{isEditing ? 'Cancel' : 'Edit'}</span>
+              </Button>
+            )}
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600"
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
-            <X className="h-5 w-5" />
+            <X className="h-5 w-5 text-gray-500" />
           </button>
         </div>
 
-        <div className="flex h-[calc(90vh-80px)]">
-          {/* Main Content */}
-          <div className="flex-1 p-6 overflow-y-auto">
-            {/* Title */}
-            <h1 className="text-2xl font-semibold text-gray-900 mb-4">
-              {task.title}
-            </h1>
-
-            {/* Description */}
-            {task.description && (
-              <div className="mb-6">
-                <h3 className="text-sm font-medium text-gray-700 mb-2">Description</h3>
-                <p className="text-gray-600 leading-relaxed">
-                  {task.description}
-                </p>
-              </div>
+        {/* Content */}
+        <div className="p-6 space-y-6">
+          {/* Title */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Title</label>
+            {isEditing ? (
+              <Input
+                name="title"
+                value={formData.title}
+                onChange={handleInputChange}
+                className="text-lg font-semibold"
+              />
+            ) : (
+              <h1 className="text-xl font-semibold text-gray-900">{task.title}</h1>
             )}
+          </div>
 
-            {/* Work Progress Section */}
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-medium text-gray-700">Work Progress</h3>
-                {!canEdit && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setIsAddingWork(true)}
-                  >
-                    <MessageSquare className="h-4 w-4 mr-1" />
-                    Add Progress
-                  </Button>
-                )}
-              </div>
+          {/* Description */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+            {isEditing ? (
+              <textarea
+                name="description"
+                value={formData.description}
+                onChange={handleInputChange}
+                rows={4}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Add a description..."
+              />
+            ) : (
+              <p className="text-gray-700 whitespace-pre-wrap">
+                {task.description || 'No description provided.'}
+              </p>
+            )}
+          </div>
 
-              {isAddingWork && (
-                <div className="mb-4 p-4 bg-gray-50 rounded-lg">
-                  <textarea
-                    value={workDescription}
-                    onChange={(e) => setWorkDescription(e.target.value)}
-                    placeholder="Describe what you worked on today..."
-                    className="w-full p-3 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    rows={3}
-                  />
-                  <div className="flex gap-2 mt-3">
-                    <Button size="sm" onClick={handleAddWorkDescription}>
-                      Add Progress
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => {
-                        setIsAddingWork(false);
-                        setWorkDescription('');
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
+          {/* Status and Priority Row */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+              {isEditing ? (
+                <Select
+                  name="status"
+                  value={formData.status}
+                  onChange={handleInputChange}
+                  options={statusOptions}
+                />
+              ) : (
+                <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${statusColors[task.status]}`}>
+                  {statusOptions.find(s => s.value === task.status)?.label}
+                </span>
               )}
+            </div>
 
-              {/* Sample work entries */}
-              <div className="space-y-3">
-                <div className="flex gap-3 p-3 bg-gray-50 rounded-lg">
-                  <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
-                    <span className="text-white text-xs font-medium">
-                      {task.assignedTo?.name.charAt(0).toUpperCase() || 'U'}
-                    </span>
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm font-medium text-gray-900">
-                        {task.assignedTo?.name || 'Unassigned'}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {new Date(task.createdAt).toLocaleDateString()}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-600">
-                      Task created and initial setup completed
-                    </p>
-                  </div>
-                </div>
-              </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Priority</label>
+              {isEditing ? (
+                <Select
+                  name="priority"
+                  value={formData.priority}
+                  onChange={handleInputChange}
+                  options={priorityOptions}
+                />
+              ) : (
+                <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${priorityColors[task.priority]}`}>
+                  <Flag className="h-3 w-3 mr-1" />
+                  {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}
+                </span>
+              )}
             </div>
           </div>
 
-          {/* Sidebar */}
-          <div className="w-80 border-l border-gray-200 p-6 bg-gray-50">
-            <div className="space-y-6">
-              {/* Assignee */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <User className="h-4 w-4 inline mr-1" />
-                  Assignee
-                </label>
-                <div className="flex items-center gap-2">
-                  {task.assignedTo ? (
-                    <>
-                      <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
-                        <span className="text-white text-xs font-medium">
-                          {task.assignedTo.name.charAt(0).toUpperCase()}
-                        </span>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{task.assignedTo.name}</p>
-                        <p className="text-xs text-gray-500">{task.assignedTo.email}</p>
-                      </div>
-                    </>
-                  ) : (
-                    <span className="text-sm text-gray-500">Unassigned</span>
-                  )}
-                </div>
-              </div>
-
-              {/* Due Date */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <Calendar className="h-4 w-4 inline mr-1" />
-                  Due Date
-                </label>
-                {task.dueDate ? (
-                  <p className="text-sm text-gray-900">
-                    {new Date(task.dueDate).toLocaleDateString('en-US', {
-                      weekday: 'short',
-                      year: 'numeric',
-                      month: 'short',
-                      day: 'numeric'
-                    })}
-                  </p>
+          {/* Assignee */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Assigned To</label>
+            {isEditing ? (
+              <Select
+                name="assignedTo"
+                value={formData.assignedTo}
+                onChange={handleInputChange}
+                options={userOptions}
+              />
+            ) : (
+              <div className="flex items-center space-x-2">
+                {task.assignedTo ? (
+                  <>
+                    <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-sm font-medium">
+                        {task.assignedTo.name.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900">{task.assignedTo.name}</p>
+                      <p className="text-sm text-gray-500">{task.assignedTo.email}</p>
+                    </div>
+                  </>
                 ) : (
-                  <span className="text-sm text-gray-500">No due date</span>
+                  <span className="text-gray-500">Unassigned</span>
                 )}
               </div>
+            )}
+          </div>
 
-              {/* Created */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <Clock className="h-4 w-4 inline mr-1" />
-                  Created
-                </label>
-                <p className="text-sm text-gray-900">
+          {/* Timeline Section */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Due Date</label>
+              {isEditing ? (
+                <Input
+                  type="date"
+                  name="dueDate"
+                  value={formData.dueDate}
+                  onChange={handleInputChange}
+                />
+              ) : (
+                <div className="flex items-center space-x-2 text-gray-700">
+                  <Calendar className="h-4 w-4" />
+                  <span>
+                    {task.dueDate 
+                      ? new Date(task.dueDate).toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })
+                      : 'No due date set'
+                    }
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Created</label>
+              <div className="flex items-center space-x-2 text-gray-700">
+                <Clock className="h-4 w-4" />
+                <span>
                   {new Date(task.createdAt).toLocaleDateString('en-US', {
                     year: 'numeric',
                     month: 'short',
                     day: 'numeric'
                   })}
-                </p>
-                <p className="text-xs text-gray-500">by {task.createdBy.name}</p>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Time Tracking */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Estimated Hours</label>
+              {isEditing ? (
+                <Input
+                  type="number"
+                  name="estimatedHours"
+                  value={formData.estimatedHours}
+                  onChange={handleInputChange}
+                  min="0"
+                  step="0.5"
+                />
+              ) : (
+                <span className="text-gray-700">{task.estimatedHours || 0}h</span>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Actual Hours</label>
+              {isEditing ? (
+                <Input
+                  type="number"
+                  name="actualHours"
+                  value={formData.actualHours}
+                  onChange={handleInputChange}
+                  min="0"
+                  step="0.5"
+                />
+              ) : (
+                <span className="text-gray-700">{task.actualHours || 0}h</span>
+              )}
+            </div>
+          </div>
+
+          {/* Created By */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Created By</label>
+            <div className="flex items-center space-x-2">
+              <div className="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center">
+                <span className="text-white text-sm font-medium">
+                  {task.createdBy.name.charAt(0).toUpperCase()}
+                </span>
+              </div>
+              <div>
+                <p className="font-medium text-gray-900">{task.createdBy.name}</p>
+                <p className="text-sm text-gray-500">{task.createdBy.email}</p>
               </div>
             </div>
           </div>
         </div>
+
+        {/* Footer */}
+        {isEditing && (
+          <div className="flex items-center justify-end space-x-3 p-6 border-t border-gray-200 bg-gray-50">
+            <Button
+              variant="outline"
+              onClick={() => setIsEditing(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSave}
+              loading={loading}
+              className="flex items-center space-x-2"
+            >
+              <Save className="h-4 w-4" />
+              <span>Save Changes</span>
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

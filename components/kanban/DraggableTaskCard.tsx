@@ -1,3 +1,5 @@
+'use client';
+
 import React from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -7,7 +9,7 @@ interface Task {
   _id: string;
   title: string;
   description: string;
-  status: 'todo' | 'in-progress' | 'done';
+  status: 'todo' | 'in-progress' | 'review' | 'done';
   priority: 'low' | 'medium' | 'high' | 'critical';
   assignedTo?: {
     name: string;
@@ -26,10 +28,7 @@ interface DraggableTaskCardProps {
   onClick: () => void;
 }
 
-export const DraggableTaskCard: React.FC<DraggableTaskCardProps> = ({
-  task,
-  onClick
-}) => {
+export const DraggableTaskCard: React.FC<DraggableTaskCardProps> = ({ task, onClick }) => {
   const {
     attributes,
     listeners,
@@ -37,14 +36,11 @@ export const DraggableTaskCard: React.FC<DraggableTaskCardProps> = ({
     transform,
     transition,
     isDragging,
-  } = useSortable({
-    id: task._id,
-  });
+  } = useSortable({ id: task._id });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
   };
 
   return (

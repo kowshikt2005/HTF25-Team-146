@@ -1,37 +1,52 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Bell, X, CheckCircle, AlertCircle, Info } from 'lucide-react';
+import { useAppStore } from '../../lib/store';
 
 interface Notification {
   id: string;
-  type: 'task_assigned' | 'task_completed' | 'project_created' | 'task_updated';
+  type: 'task_assigned' | 'task_completed' | 'project_created' | 'task_updated' | 'task_reassigned' | 'info' | 'success' | 'error';
   title: string;
   message: string;
   timestamp: string;
   read: boolean;
+  taskId?: string;
+  projectId?: string;
 }
 
 export const SimpleNotificationCenter: React.FC = () => {
-  const [notifications, setNotifications] = useState<Notification[]>([
-    {
-      id: '1',
-      type: 'task_assigned',
-      title: 'New Task Assigned',
-      message: 'You have been assigned: Setup project structure',
-      timestamp: new Date().toISOString(),
-      read: false
-    },
-    {
-      id: '2',
-      type: 'task_updated',
-      title: 'Task Updated',
-      message: 'Task "Design user interface" status changed to in-progress',
-      timestamp: new Date(Date.now() - 3600000).toISOString(),
-      read: true
-    }
-  ]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
+
+  // Listen to app store notifications
+  const { notifications: storeNotifications } = useAppStore();
+
+  useEffect(() => {
+    // Convert store notifications to local format
+    const formattedNotifications = storeNotifications.map(n => ({
+      id: n.id,
+      type: n.type as any,
+      title: getNotificationTitle(n.type),
+      message: n.message,
+      timestamp: new Date(n.timestamp).toISOString(),
+      read: false
+    }));
+    setNotifications(formattedNotifications);
+  }, [storeNotifications]);
+
+  const getNotificationTitle = (type: string) => {
+    switch (type) {
+      case 'info':
+        return 'Information';
+      case 'success':
+        return 'Success';
+      case 'error':
+        return 'Error';
+      default:
+        return 'Notification';
+    }
+  };
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -54,11 +69,16 @@ export const SimpleNotificationCenter: React.FC = () => {
   const getNotificationIcon = (type: string) => {
     switch (type) {
       case 'task_assigned':
+      case 'task_reassigned':
         return <AlertCircle className="h-4 w-4 text-blue-500" />;
       case 'task_completed':
+      case 'success':
         return <CheckCircle className="h-4 w-4 text-green-500" />;
       case 'task_updated':
+      case 'info':
         return <Info className="h-4 w-4 text-orange-500" />;
+      case 'error':
+        return <AlertCircle className="h-4 w-4 text-red-500" />;
       default:
         return <Info className="h-4 w-4 text-gray-500" />;
     }

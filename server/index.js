@@ -101,9 +101,43 @@ const taskSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+// Real-time Activity Schema for tracking user actions
+const activitySchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', required: true },
+  action: { 
+    type: String, 
+    enum: ['task_created', 'task_updated', 'task_deleted', 'user_joined', 'user_left', 'comment_added'],
+    required: true 
+  },
+  targetId: { type: mongoose.Schema.Types.ObjectId }, // Task ID, Comment ID, etc.
+  metadata: {
+    oldValue: mongoose.Schema.Types.Mixed,
+    newValue: mongoose.Schema.Types.Mixed,
+    field: String, // Which field was changed
+    description: String
+  },
+  timestamp: { type: Date, default: Date.now },
+  sessionId: String // Socket session ID for tracking
+});
+
+// User Session Schema for tracking active users
+const userSessionSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', required: true },
+  socketId: { type: String, required: true },
+  joinedAt: { type: Date, default: Date.now },
+  lastActivity: { type: Date, default: Date.now },
+  isActive: { type: Boolean, default: true },
+  userAgent: String,
+  ipAddress: String
+});
+
 const User = mongoose.model('User', userSchema);
 const Project = mongoose.model('Project', projectSchema);
 const Task = mongoose.model('Task', taskSchema);
+const Activity = mongoose.model('Activity', activitySchema);
+const UserSession = mongoose.model('UserSession', userSessionSchema);
 
 // JWT middleware
 const authenticateToken = (req, res, next) => {
@@ -246,6 +280,22 @@ app.get('/api/users', authenticateToken, async (req, res) => {
   }
 });
 
+// Get all users (for real user management)
+app.get('/api/users/all', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'mentor') {
+      return res.status(403).json({ error: 'Only mentors can view all users' });
+    }
+    
+    // Get all users except the current user
+    const users = await User.find({ _id: { $ne: req.user.userId } }, 'name email role createdAt')
+      .sort({ createdAt: -1 });
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Task Routes
 app.post('/api/tasks', authenticateToken, async (req, res) => {
   try {
@@ -285,31 +335,378 @@ app.get('/api/tasks/:projectId', authenticateToken, async (req, res) => {
 
 app.put('/api/tasks/:taskId', authenticateToken, async (req, res) => {
   try {
-    const { status, description } = req.body;
+    const { 
+      status, 
+      description, 
+      title, 
+      priority, 
+      assignedTo, 
+      dueDate, 
+      estimatedHours, 
+      actualHours 
+    } = req.body;
+    
+    // Get the original task for activity logging
+    const originalTask = await Task.findById(req.params.taskId).populate('assignees');
+    
+    // Prepare update object
+    const updateData = {
+      updatedAt: new Date()
+    };
+    
+    if (status !== undefined) updateData.status = status;
+    if (description !== undefined) updateData.description = description;
+    if (title !== undefined) updateData.title = title;
+    if (priority !== undefined) updateData.priority = priority;
+    if (dueDate !== undefined) updateData.dueDate = dueDate;
+    if (estimatedHours !== undefined) updateData.estimatedHours = estimatedHours;
+    if (actualHours !== undefined) updateData.actualHours = actualHours;
+    
+    // Handle assignee changes
+    if (assignedTo !== undefined) {
+      updateData.assignees = assignedTo ? [assignedTo] : [];
+    }
     
     const task = await Task.findByIdAndUpdate(
       req.params.taskId,
-      { status, description, updatedAt: new Date() },
+      updateData,
       { new: true }
     ).populate('assignees createdBy project', 'name email title');
 
-    io.emit('task_updated', task);
+    // Log activities for different types of changes
+    const activities = [];
+    
+    if (originalTask.status !== status && status) {
+      activities.push({
+        userId: req.user.userId,
+        projectId: task.project._id,
+        action: 'task_updated',
+        targetId: task._id,
+        metadata: {
+          description: `Task status changed from ${originalTask.status} to ${status}`,
+          field: 'status',
+          oldValue: originalTask.status,
+          newValue: status
+        }
+      });
+    }
+    
+    // Check for reassignment
+    const oldAssigneeId = originalTask.assignees?.[0]?._id?.toString();
+    const newAssigneeId = task.assignees?.[0]?._id?.toString();
+    const wasReassigned = oldAssigneeId !== newAssigneeId;
+    
+    if (wasReassigned) {
+      activities.push({
+        userId: req.user.userId,
+        projectId: task.project._id,
+        action: 'task_updated',
+        targetId: task._id,
+        metadata: {
+          description: `Task reassigned from ${originalTask.assignees?.[0]?.name || 'unassigned'} to ${task.assignees?.[0]?.name || 'unassigned'}`,
+          field: 'assignee',
+          oldValue: oldAssigneeId,
+          newValue: newAssigneeId
+        }
+      });
+    }
+    
+    // Save all activities
+    for (const activityData of activities) {
+      const activity = new Activity(activityData);
+      await activity.save();
+    }
+
+    // Emit real-time update with reassignment info
+    const taskUpdate = {
+      ...task.toObject(),
+      wasReassigned,
+      previousAssignee: originalTask.assignees?.[0] || null
+    };
+    
+    io.to(task.project._id.toString()).emit('task_updated', taskUpdate);
     res.json(task);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
+// Get project activity logs
+app.get('/api/projects/:projectId/activity', authenticateToken, async (req, res) => {
+  try {
+    const { page = 1, limit = 50 } = req.query;
+    
+    const activities = await Activity.find({ projectId: req.params.projectId })
+      .populate('userId', 'name email')
+      .populate('targetId')
+      .sort({ timestamp: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+    
+    const total = await Activity.countDocuments({ projectId: req.params.projectId });
+    
+    res.json({
+      activities,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
+      total
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get active users for a project
+app.get('/api/projects/:projectId/active-users', authenticateToken, async (req, res) => {
+  try {
+    const activeSessions = await UserSession.find({
+      projectId: req.params.projectId,
+      isActive: true,
+      lastActivity: { $gte: new Date(Date.now() - 5 * 60 * 1000) } // Active in last 5 minutes
+    }).populate('userId', 'name email role');
+    
+    res.json(activeSessions);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get assigned tasks for a user
+app.get('/api/users/:userId/assigned-tasks', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    
+    // Ensure user can only see their own tasks or mentor can see all
+    if (req.user.userId !== userId && req.user.role !== 'mentor') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    const tasks = await Task.find({
+      assignees: userId,
+      status: { $ne: 'done' } // Exclude completed tasks
+    })
+    .populate('project', 'title')
+    .populate('createdBy', 'name email')
+    .populate('assignees', 'name email')
+    .sort({ createdAt: -1 });
+    
+    // Add isNew flag for recently assigned tasks (within last 24 hours)
+    const tasksWithFlags = tasks.map(task => ({
+      ...task.toObject(),
+      isNew: new Date() - new Date(task.updatedAt) < 24 * 60 * 60 * 1000,
+      assignedTo: task.assignees?.[0] // Backward compatibility
+    }));
+    
+    res.json(tasksWithFlags);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Real-time activity tracking
+const activeUsers = new Map(); // projectId -> Set of socket IDs
+const userSessions = new Map(); // socket.id -> { userId, projectId, joinedAt }
+
 // Socket.IO connection
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
   
-  socket.on('join_project', (projectId) => {
-    socket.join(projectId);
-    console.log(`User ${socket.id} joined project ${projectId}`);
+  // User joins a project room
+  socket.on('join_project', async (data) => {
+    const { projectId, userId, userName } = data;
+    
+    try {
+      // Leave previous project if any
+      if (userSessions.has(socket.id)) {
+        const prevSession = userSessions.get(socket.id);
+        socket.leave(prevSession.projectId);
+        
+        // Mark previous session as inactive in database
+        await UserSession.updateMany(
+          { socketId: socket.id },
+          { isActive: false, lastActivity: new Date() }
+        );
+        
+        // Remove from active users
+        if (activeUsers.has(prevSession.projectId)) {
+          activeUsers.get(prevSession.projectId).delete(socket.id);
+        }
+      }
+      
+      // Join new project
+      socket.join(projectId);
+      
+      // Create database session record
+      const sessionRecord = new UserSession({
+        userId,
+        projectId,
+        socketId: socket.id,
+        userAgent: socket.handshake.headers['user-agent'],
+        ipAddress: socket.handshake.address
+      });
+      await sessionRecord.save();
+      
+      // Track user session in memory
+      userSessions.set(socket.id, {
+        userId,
+        userName,
+        projectId,
+        joinedAt: new Date()
+      });
+      
+      // Add to active users
+      if (!activeUsers.has(projectId)) {
+        activeUsers.set(projectId, new Set());
+      }
+      activeUsers.get(projectId).add(socket.id);
+      
+      // Log activity
+      const activity = new Activity({
+        userId,
+        projectId,
+        action: 'user_joined',
+        metadata: {
+          description: `${userName} joined the project`
+        },
+        sessionId: socket.id
+      });
+      await activity.save();
+      
+      // Notify others in the project
+      socket.to(projectId).emit('user_joined', {
+        userId,
+        userName,
+        joinedAt: new Date()
+      });
+      
+      // Send current active users to the new user
+      const projectActiveUsers = Array.from(activeUsers.get(projectId) || [])
+        .map(socketId => userSessions.get(socketId))
+        .filter(session => session && session.userId !== userId);
+      
+      socket.emit('active_users', projectActiveUsers);
+      
+      console.log(`User ${userName} (${userId}) joined project ${projectId}`);
+    } catch (error) {
+      console.error('Error handling user join:', error);
+    }
   });
 
-  socket.on('disconnect', () => {
+  // Real-time task updates
+  socket.on('task_updated', async (taskData) => {
+    const session = userSessions.get(socket.id);
+    if (session) {
+      try {
+        // Log activity to database
+        const activity = new Activity({
+          userId: session.userId,
+          projectId: session.projectId,
+          action: 'task_updated',
+          targetId: taskData._id,
+          metadata: {
+            description: `${session.userName} updated task: ${taskData.title}`,
+            field: 'status', // Could be dynamic based on what changed
+            newValue: taskData.status
+          },
+          sessionId: socket.id
+        });
+        await activity.save();
+        
+        // Update session activity
+        await UserSession.updateOne(
+          { socketId: socket.id },
+          { lastActivity: new Date() }
+        );
+        
+        // Broadcast to all users in the project except sender
+        socket.to(session.projectId).emit('task_updated', {
+          ...taskData,
+          updatedBy: session.userName,
+          updatedAt: new Date()
+        });
+        
+        console.log(`Task ${taskData._id} updated by ${session.userName}`);
+      } catch (error) {
+        console.error('Error logging task update:', error);
+      }
+    }
+  });
+
+  // Real-time task creation
+  socket.on('task_created', (taskData) => {
+    const session = userSessions.get(socket.id);
+    if (session) {
+      socket.to(session.projectId).emit('task_created', {
+        ...taskData,
+        createdBy: session.userName,
+        createdAt: new Date()
+      });
+      
+      console.log(`Task ${taskData._id} created by ${session.userName}`);
+    }
+  });
+
+  // User typing indicator
+  socket.on('user_typing', (data) => {
+    const session = userSessions.get(socket.id);
+    if (session) {
+      socket.to(session.projectId).emit('user_typing', {
+        userId: session.userId,
+        userName: session.userName,
+        taskId: data.taskId,
+        isTyping: data.isTyping
+      });
+    }
+  });
+
+  // Handle disconnection
+  socket.on('disconnect', async () => {
+    const session = userSessions.get(socket.id);
+    if (session) {
+      try {
+        // Mark session as inactive in database
+        await UserSession.updateOne(
+          { socketId: socket.id },
+          { isActive: false, lastActivity: new Date() }
+        );
+        
+        // Log activity
+        const activity = new Activity({
+          userId: session.userId,
+          projectId: session.projectId,
+          action: 'user_left',
+          metadata: {
+            description: `${session.userName} left the project`
+          },
+          sessionId: socket.id
+        });
+        await activity.save();
+        
+        // Remove from active users
+        if (activeUsers.has(session.projectId)) {
+          activeUsers.get(session.projectId).delete(socket.id);
+          
+          // Clean up empty project rooms
+          if (activeUsers.get(session.projectId).size === 0) {
+            activeUsers.delete(session.projectId);
+          }
+        }
+        
+        // Notify others in the project
+        socket.to(session.projectId).emit('user_left', {
+          userId: session.userId,
+          userName: session.userName,
+          leftAt: new Date()
+        });
+        
+        console.log(`User ${session.userName} (${session.userId}) disconnected from project ${session.projectId}`);
+      } catch (error) {
+        console.error('Error handling user disconnect:', error);
+      }
+    }
+    
+    // Clean up session
+    userSessions.delete(socket.id);
     console.log('User disconnected:', socket.id);
   });
 });

@@ -22,7 +22,7 @@ interface Task {
   _id: string;
   title: string;
   description: string;
-  status: 'todo' | 'in-progress' | 'done';
+  status: 'todo' | 'in-progress' | 'review' | 'done';
   priority: 'low' | 'medium' | 'high' | 'critical';
   assignedTo?: {
     name: string;
@@ -50,7 +50,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const { user, tasks, setTasks, isLoading, setLoading } = useAppStore();
   const { optimisticTaskUpdate } = useOptimisticUpdates();
-  const { emitEvent } = useSocket();
+  const { emitEvent, joinProject, activeUsers } = useSocket(projectId);
   const canAddTasks = user?.role === 'mentor';
 
   const sensors = useSensors(
@@ -122,7 +122,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex h-full bg-white rounded border border-gray-200 overflow-hidden">
+      <div className="flex h-full bg-gray-50 px-6 py-4 gap-6 overflow-x-auto">
         <KanbanColumn
           id="todo"
           title="Backlog"
@@ -131,14 +131,18 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           onAddTask={onAddTask}
           canAddTasks={canAddTasks}
         />
-        <div className="w-px bg-gray-200" />
         <KanbanColumn
           id="in-progress"
-          title="In progress"
+          title="In Progress"
           tasks={inProgressTasks}
           onTaskClick={onTaskClick}
         />
-        <div className="w-px bg-gray-200" />
+        <KanbanColumn
+          id="review"
+          title="Review"
+          tasks={tasks.filter(task => task.status === 'review')}
+          onTaskClick={onTaskClick}
+        />
         <KanbanColumn
           id="done"
           title="Done"

@@ -38,7 +38,8 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
 
   const loadUsers = async () => {
     try {
-      const usersData = await apiService.getUsers();
+      // Get all users, not just employees
+      const usersData = await apiService.getAllUsers();
       setUsers(usersData);
     } catch (error) {
       console.error('Failed to load users:', error);
