@@ -10,6 +10,7 @@ import { CreateProjectModal } from '../../../components/projects/CreateProjectMo
 import { StatsCard } from '../../../components/dashboard/StatsCard';
 import { ActivityFeed } from '../../../components/dashboard/ActivityFeed';
 import { Button } from '../../../components/ui/Button';
+import { GitHubAccessGuide } from '../../../components/ui/GitHubAccessGuide';
 import { FolderOpen, CheckSquare, Users, TrendingUp } from 'lucide-react';
 
 export default function MentorDashboard() {

@@ -52,27 +52,29 @@ export const Navbar: React.FC<NavbarProps> = ({ user }) => {
                 <span>Calendar</span>
               </Button>
               
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => router.push('/team')}
-                className={`flex items-center space-x-1 ${user?.role !== 'mentor' ? 'hidden' : ''}`}
-              >
-                <Users className="w-4 h-4" />
-                <span>Team</span>
-              </Button>
+              {user?.role === 'mentor' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => router.push('/team')}
+                  className="flex items-center space-x-1"
+                >
+                  <Users className="w-4 h-4" />
+                  <span>Team</span>
+                </Button>
+              )}
             </div>
             
             <SimpleNotificationCenter />
             
             <div className="flex items-center space-x-2">
               <div className="text-sm">
-                <p className="font-medium text-gray-900">{user?.name || ''}</p>
-                <p className="text-gray-500 capitalize">{user?.role || ''}</p>
+                <p className="font-medium text-gray-900">{user?.name || 'User'}</p>
+                <p className="text-gray-500 capitalize">{user?.role || 'Role'}</p>
               </div>
               <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
                 <span className="text-white text-sm font-medium">
-                  {user?.name?.charAt(0)?.toUpperCase() || ''}
+                  {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
                 </span>
               </div>
             </div>

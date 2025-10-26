@@ -1,20 +1,25 @@
-import React from 'react';
-import { Calendar, Users, GitBranch, MoreHorizontal } from 'lucide-react';
+import React, { useState } from 'react';
+import { Calendar, Users, GitBranch, MoreHorizontal, Github } from 'lucide-react';
+import { ProjectDetailsModal } from './ProjectDetailsModal';
 
 interface Project {
   _id: string;
   title: string;
   description: string;
   owner: {
+    _id: string;
     name: string;
     email: string;
   };
   collaborators: Array<{
+    _id: string;
     name: string;
     email: string;
   }>;
   createdAt: string;
+  updatedAt: string;
   gitRepo?: string;
+  githubUrl?: string;
 }
 
 interface ProjectCardProps {
@@ -23,9 +28,16 @@ interface ProjectCardProps {
 }
 
 export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick }) => {
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
   const projectId = `PRJ-${project._id.slice(-4).toUpperCase()}`;
   
+  const handleDetailsClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowDetailsModal(true);
+  };
+  
   return (
+    <>
     <div
       onClick={onClick}
       className="group relative bg-white rounded-xl border border-gray-200 p-6 hover:border-gray-300 hover:shadow-lg transition-all duration-200 cursor-pointer"
@@ -36,8 +48,9 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick }) =>
           <div className="flex items-center gap-2 mb-2">
             <span className="text-xs font-medium text-gray-500">{projectId}</span>
             {project.gitRepo && (
-              <div className="flex items-center gap-1 text-gray-400">
-                <GitBranch className="h-3 w-3" />
+              <div className="flex items-center gap-1 text-green-600 bg-green-50 px-2 py-1 rounded-full">
+                <Github className="h-3 w-3" />
+                <span className="text-xs font-medium">GitHub Connected</span>
               </div>
             )}
           </div>
@@ -49,7 +62,8 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick }) =>
         <div className="opacity-0 group-hover:opacity-100 transition-opacity">
           <button 
             className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600"
-            onClick={(e) => e.stopPropagation()}
+            onClick={handleDetailsClick}
+            title="View project details"
           >
             <MoreHorizontal className="h-4 w-4" />
           </button>
@@ -121,5 +135,12 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick }) =>
       {/* Hover Effect Border */}
       <div className="absolute inset-0 rounded-xl border-2 border-transparent group-hover:border-blue-100 transition-colors pointer-events-none" />
     </div>
+
+    <ProjectDetailsModal
+      project={project}
+      isOpen={showDetailsModal}
+      onClose={() => setShowDetailsModal(false)}
+    />
+    </>
   );
 };

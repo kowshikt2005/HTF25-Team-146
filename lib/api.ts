@@ -42,6 +42,10 @@ class ApiService {
     return this.request('/api/projects');
   }
 
+  async getProject(projectId: string) {
+    return this.request(`/api/projects/${projectId}`);
+  }
+
   async createProject(projectData: {
     title: string;
     description: string;

@@ -89,13 +89,21 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
             />
           </div>
 
-          <Input
-            label="Git Repository (optional)"
-            name="gitRepo"
-            value={formData.gitRepo}
-            onChange={handleChange}
-            placeholder="https://github.com/username/repo"
-          />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              GitHub Repository (optional)
+            </label>
+            <input
+              name="gitRepo"
+              value={formData.gitRepo}
+              onChange={handleChange}
+              placeholder="username/repository or https://github.com/username/repo"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              You can also create a GitHub repository after creating the project
+            </p>
+          </div>
 
           {error && (
             <div className="text-red-600 text-sm">{error}</div>

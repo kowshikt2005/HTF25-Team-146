@@ -7,6 +7,10 @@ const { createServer } = require('http');
 const { Server } = require('socket.io');
 const calendarRoutes = require('./routes/calendar');
 const googleAuthRoutes = require('./routes/googleAuth');
+const githubOAuthRoutes = require('./routes/githubOAuth');
+const githubViewerRoutes = require('./routes/githubViewer');
+// const githubApiRoutes = require('./routes/githubApi'); // Disabled - missing githubApp module
+// const githubWebhookRoutes = require('./routes/githubWebhooks'); // Disabled - missing githubApp module
 // const { reminderScheduler } = require('../lib/reminderScheduler'); // Disabled for now
 require('dotenv').config({ path: '.env.local' });
 
@@ -26,6 +30,10 @@ app.use(express.json());
 // Routes
 app.use('/api/calendar', calendarRoutes);
 app.use('/api/auth', googleAuthRoutes);
+app.use('/api/github', githubOAuthRoutes);
+app.use('/api/github-viewer', githubViewerRoutes);
+// app.use('/api/github-app', githubApiRoutes); // Disabled - missing githubApp module
+// app.use('/api/webhooks', githubWebhookRoutes); // Disabled - missing githubApp module
 
 // MongoDB connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/collab-workspace')
@@ -50,7 +58,8 @@ const projectSchema = new mongoose.Schema({
   description: String,
   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   collaborators: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  gitRepo: String,
+  gitRepo: String, // Format: "owner/repo"
+  githubUrl: String, // Full GitHub URL
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -313,6 +322,60 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
     }
     
     res.json(projects);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/projects/:id', authenticateToken, async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.id)
+      .populate('owner collaborators', 'name email');
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    // Check if user has access to this project
+    const hasAccess = project.owner._id.toString() === req.user.userId ||
+                     project.collaborators.some(collab => collab._id.toString() === req.user.userId);
+    
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    res.json(project);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/projects/:id', authenticateToken, async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.id);
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    // Check if user is the owner (only owners can update projects)
+    if (project.owner.toString() !== req.user.userId) {
+      return res.status(403).json({ error: 'Only project owners can update projects' });
+    }
+
+    const { title, description, gitRepo, githubUrl, collaborators } = req.body;
+    
+    // Update project fields
+    if (title !== undefined) project.title = title;
+    if (description !== undefined) project.description = description;
+    if (gitRepo !== undefined) project.gitRepo = gitRepo;
+    if (githubUrl !== undefined) project.githubUrl = githubUrl;
+    if (collaborators !== undefined) project.collaborators = collaborators;
+    
+    await project.save();
+    await project.populate('owner collaborators', 'name email');
+    
+    res.json(project);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
