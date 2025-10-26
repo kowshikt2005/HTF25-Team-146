@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { authService, User } from '../../lib/auth';
 import { Button } from '../ui/Button';
 import { SimpleNotificationCenter } from '../notifications/SimpleNotificationCenter';
+import { Calendar, Home, Users } from 'lucide-react';
 
 interface NavbarProps {
   user: User;
@@ -29,16 +30,49 @@ export const Navbar: React.FC<NavbarProps> = ({ user }) => {
           </div>
           
           <div className="flex items-center space-x-4">
+            {/* Navigation Links */}
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.push(user?.role === 'mentor' ? '/mentor/dashboard' : '/employee/dashboard')}
+                className="flex items-center space-x-1"
+              >
+                <Home className="w-4 h-4" />
+                <span>Dashboard</span>
+              </Button>
+              
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.push('/calendar')}
+                className="flex items-center space-x-1"
+              >
+                <Calendar className="w-4 h-4" />
+                <span>Calendar</span>
+              </Button>
+              
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.push('/team')}
+                className={`flex items-center space-x-1 ${user?.role !== 'mentor' ? 'hidden' : ''}`}
+              >
+                <Users className="w-4 h-4" />
+                <span>Team</span>
+              </Button>
+            </div>
+            
             <SimpleNotificationCenter />
             
             <div className="flex items-center space-x-2">
               <div className="text-sm">
-                <p className="font-medium text-gray-900">{user.name}</p>
-                <p className="text-gray-500 capitalize">{user.role}</p>
+                <p className="font-medium text-gray-900">{user?.name || ''}</p>
+                <p className="text-gray-500 capitalize">{user?.role || ''}</p>
               </div>
               <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
                 <span className="text-white text-sm font-medium">
-                  {user.name.charAt(0).toUpperCase()}
+                  {user?.name?.charAt(0)?.toUpperCase() || ''}
                 </span>
               </div>
             </div>

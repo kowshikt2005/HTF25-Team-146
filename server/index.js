@@ -5,6 +5,9 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
+const calendarRoutes = require('./routes/calendar');
+const googleAuthRoutes = require('./routes/googleAuth');
+// const { reminderScheduler } = require('../lib/reminderScheduler'); // Disabled for now
 require('dotenv').config({ path: '.env.local' });
 
 const app = express();
@@ -20,6 +23,10 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json());
 
+// Routes
+app.use('/api/calendar', calendarRoutes);
+app.use('/api/auth', googleAuthRoutes);
+
 // MongoDB connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/collab-workspace')
   .then(() => console.log('Connected to MongoDB'))
@@ -32,6 +39,8 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   role: { type: String, enum: ['mentor', 'employee'], required: true },
   phone: String,
+  googleId: String, // Google user ID
+  avatar: String, // Google profile picture
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -133,11 +142,54 @@ const userSessionSchema = new mongoose.Schema({
   ipAddress: String
 });
 
+// Meeting Schema
+const meetingSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  description: String,
+  start: { type: Date, required: true },
+  end: { type: Date, required: true },
+  attendees: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  organizer: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  agenda: [{ type: String }],
+  location: String,
+  isRecurring: { type: Boolean, default: false },
+  recurringPattern: {
+    frequency: { type: String, enum: ['daily', 'weekly', 'monthly'] },
+    interval: { type: Number, default: 1 },
+    endDate: Date
+  },
+  actionItems: [{
+    description: String,
+    assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    dueDate: Date,
+    completed: { type: Boolean, default: false }
+  }],
+  notes: String,
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+
+// User Tokens Schema for Google Calendar integration
+const userTokensSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+  googleTokens: {
+    access_token: String,
+    refresh_token: String,
+    scope: String,
+    token_type: String,
+    expiry_date: Number
+  },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+
 const User = mongoose.model('User', userSchema);
 const Project = mongoose.model('Project', projectSchema);
 const Task = mongoose.model('Task', taskSchema);
 const Activity = mongoose.model('Activity', activitySchema);
 const UserSession = mongoose.model('UserSession', userSessionSchema);
+const Meeting = mongoose.model('Meeting', meetingSchema);
+const UserTokens = mongoose.model('UserTokens', userTokensSchema);
 
 // JWT middleware
 const authenticateToken = (req, res, next) => {
@@ -295,6 +347,10 @@ app.get('/api/users/all', authenticateToken, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// Meeting routes
+const meetingRoutes = require('./routes/meetings');
+app.use('/api/meetings', meetingRoutes);
 
 // Task Routes
 app.post('/api/tasks', authenticateToken, async (req, res) => {
@@ -498,6 +554,128 @@ app.get('/api/users/:userId/assigned-tasks', authenticateToken, async (req, res)
     }));
     
     res.json(tasksWithFlags);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Meeting Routes
+app.post('/api/meetings', authenticateToken, async (req, res) => {
+  try {
+    const { 
+      title, 
+      description, 
+      start, 
+      end, 
+      attendees, 
+      location, 
+      isRecurring, 
+      recurringPattern, 
+      agenda 
+    } = req.body;
+    
+    const meeting = new Meeting({
+      title,
+      description,
+      start: new Date(start),
+      end: new Date(end),
+      attendees: attendees || [],
+      organizer: req.user.userId,
+      location,
+      isRecurring: isRecurring || false,
+      recurringPattern: isRecurring ? recurringPattern : undefined,
+      agenda: agenda || []
+    });
+
+    await meeting.save();
+    await meeting.populate('attendees organizer', 'name email');
+    
+    // Schedule reminders for the new meeting
+    // reminderScheduler.scheduleMeetingReminders(meeting); // Disabled for now
+    
+    io.emit('meeting_created', meeting);
+    res.status(201).json(meeting);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/meetings', authenticateToken, async (req, res) => {
+  try {
+    const meetings = await Meeting.find({
+      $or: [
+        { organizer: req.user.userId },
+        { attendees: req.user.userId }
+      ]
+    })
+    .populate('attendees organizer', 'name email')
+    .sort({ start: 1 });
+    
+    res.json(meetings);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/meetings/:meetingId', authenticateToken, async (req, res) => {
+  try {
+    const { 
+      title, 
+      description, 
+      start, 
+      end, 
+      attendees, 
+      location, 
+      agenda, 
+      notes, 
+      actionItems 
+    } = req.body;
+    
+    const updateData = {
+      updatedAt: new Date()
+    };
+    
+    if (title !== undefined) updateData.title = title;
+    if (description !== undefined) updateData.description = description;
+    if (start !== undefined) updateData.start = new Date(start);
+    if (end !== undefined) updateData.end = new Date(end);
+    if (attendees !== undefined) updateData.attendees = attendees;
+    if (location !== undefined) updateData.location = location;
+    if (agenda !== undefined) updateData.agenda = agenda;
+    if (notes !== undefined) updateData.notes = notes;
+    if (actionItems !== undefined) updateData.actionItems = actionItems;
+    
+    const meeting = await Meeting.findByIdAndUpdate(
+      req.params.meetingId,
+      updateData,
+      { new: true }
+    ).populate('attendees organizer', 'name email');
+
+    // Update reminders if meeting time changed
+    if (start !== undefined || end !== undefined) {
+      // reminderScheduler.updateMeetingReminders(meeting); // Disabled for now
+    }
+
+    io.emit('meeting_updated', meeting);
+    res.json(meeting);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/meetings/:meetingId', authenticateToken, async (req, res) => {
+  try {
+    const meeting = await Meeting.findByIdAndDelete(req.params.meetingId);
+    
+    if (!meeting) {
+      return res.status(404).json({ error: 'Meeting not found' });
+    }
+    
+    // Cancel all reminders for this meeting
+    // reminderScheduler.cancelAllMeetingReminders(req.params.meetingId); // Disabled for now
+    
+    io.emit('meeting_deleted', { id: req.params.meetingId });
+    res.json({ message: 'Meeting deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

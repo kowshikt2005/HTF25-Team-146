@@ -98,6 +98,55 @@ class ApiService {
   async getAssignedTasks(userId: string) {
     return this.request(`/api/users/${userId}/assigned-tasks`);
   }
+
+  // Meetings
+  async getMeetings() {
+    return this.request('/api/meetings');
+  }
+
+  async createMeeting(meetingData: {
+    title: string;
+    description?: string;
+    start: Date;
+    end: Date;
+    attendees: string[];
+    location?: string;
+    isRecurring?: boolean;
+    recurringPattern?: {
+      frequency: 'daily' | 'weekly' | 'monthly';
+      interval: number;
+      endDate?: Date;
+    };
+    agenda?: string[];
+  }) {
+    return this.request('/api/meetings', {
+      method: 'POST',
+      body: JSON.stringify(meetingData)
+    });
+  }
+
+  async updateMeeting(meetingId: string, updates: {
+    title?: string;
+    description?: string;
+    start?: Date;
+    end?: Date;
+    attendees?: string[];
+    location?: string;
+    agenda?: string[];
+    notes?: string;
+    actionItems?: any[];
+  }) {
+    return this.request(`/api/meetings/${meetingId}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates)
+    });
+  }
+
+  async deleteMeeting(meetingId: string) {
+    return this.request(`/api/meetings/${meetingId}`, {
+      method: 'DELETE'
+    });
+  }
 }
 
 export const apiService = new ApiService();
